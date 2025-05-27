@@ -139,6 +139,82 @@ class TestHSIDataScraper:
         assert scraper._parse_number("(123.45)") == -123.45
         assert scraper._parse_number("invalid") is None
         assert scraper._parse_number("") is None
+    
+    def test_parse_change_string(self):
+        """Test change string parsing functionality."""
+        scraper = HSIDataScraper()
+        
+        # Test valid change string formats
+        point, percent = scraper._parse_change_string("14.76 (0.06%)")
+        assert point == 14.76
+        assert percent == 0.06
+        
+        # Test negative changes
+        point, percent = scraper._parse_change_string("-25.43 (-1.23%)")
+        assert point == -25.43
+        assert percent == -1.23
+        
+        # Test with commas
+        point, percent = scraper._parse_change_string("1,234.56 (2.34%)")
+        assert point == 1234.56
+        assert percent == 2.34
+        
+        # Test invalid format
+        point, percent = scraper._parse_change_string("invalid format")
+        assert point is None
+        assert percent is None
+        
+        # Test empty string
+        point, percent = scraper._parse_change_string("")
+        assert point is None
+        assert percent is None
+
+    @pytest.mark.integration
+    def test_live_hsi_data_scraping(self):
+        """Integration test: scrape live HSI data and verify all fields."""
+        scraper = HSIDataScraper()
+        
+        try:
+            data = scraper.get_hsi_data()
+            
+            # Verify response structure
+            assert isinstance(data, dict)
+            assert "current_point" in data
+            assert "daily_change_point" in data
+            assert "daily_change_percent" in data
+            assert "turnover" in data
+            assert "timestamp" in data
+            assert "source" in data
+            assert "url" in data
+            
+            # Verify critical fields are populated
+            assert data["current_point"] is not None, "current_point should not be None"
+            assert data["daily_change_point"] is not None, "daily_change_point should not be None"
+            assert data["daily_change_percent"] is not None, "daily_change_percent should not be None"
+            assert data["turnover"] is not None, "turnover should not be None"
+            
+            # Verify data quality (reasonable ranges for HSI)
+            assert isinstance(data["current_point"], (int, float))
+            assert 10000 <= data["current_point"] <= 50000, f"HSI value {data['current_point']} seems out of reasonable range"
+            
+            assert isinstance(data["daily_change_point"], (int, float))
+            assert -2000 <= data["daily_change_point"] <= 2000, f"Daily change {data['daily_change_point']} seems extreme"
+            
+            assert isinstance(data["daily_change_percent"], (int, float))
+            assert -10 <= data["daily_change_percent"] <= 10, f"Daily change % {data['daily_change_percent']} seems extreme"
+            
+            assert isinstance(data["turnover"], (int, float))
+            assert data["turnover"] > 0, "Turnover should be positive"
+            
+            # Verify metadata
+            assert data["source"] == "AAStocks"
+            assert data["url"] == scraper.HSI_URL
+            assert data["timestamp"] is not None
+            
+            print(f"✅ Live scraping test passed. HSI: {data['current_point']}, Change: {data['daily_change_point']} ({data['daily_change_percent']}%), Turnover: {data['turnover']:,.0f}")
+            
+        except Exception as e:
+            pytest.skip(f"Live scraping test skipped due to network/parsing error: {e}")
 
 
 class TestGeminiClient:

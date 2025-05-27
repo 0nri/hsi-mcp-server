@@ -70,85 +70,82 @@ class HSIDataScraper:
             logger.warning(f"Could not parse number: {text}")
             return None
     
+    def _parse_change_string(self, change_text: str) -> tuple[Optional[float], Optional[float]]:
+        """Parse change string in format '14.76 (0.06%)' into point and percentage values."""
+        if not change_text:
+            return None, None
+        
+        # Clean the text
+        change_text = self._clean_text(change_text)
+        
+        # Pattern to match "14.76 (0.06%)" or similar formats
+        pattern = r'^([+-]?[\d,\.]+)\s*\(([+-]?[\d,\.]+)%\)$'
+        match = re.match(pattern, change_text)
+        
+        if match:
+            point_change = self._parse_number(match.group(1))
+            percent_change = self._parse_number(match.group(2))
+            return point_change, percent_change
+        
+        logger.warning(f"Could not parse change string: {change_text}")
+        return None, None
+    
+    def _extract_current_point(self, soup: BeautifulSoup) -> Optional[float]:
+        """Extract current HSI point value using CSS selector."""
+        try:
+            element = soup.select_one("#hkIdxContainer > div.hkidx-last.txt_r")
+            if element:
+                text = self._clean_text(element.get_text())
+                return self._parse_number(text)
+        except Exception as e:
+            logger.warning(f"Failed to extract current point: {e}")
+        return None
+    
+    def _extract_turnover(self, soup: BeautifulSoup) -> Optional[float]:
+        """Extract turnover value using CSS selector."""
+        try:
+            element = soup.select_one("#hkIdxContainer > div.hkidx-turnover.cls > span")
+            if element:
+                text = self._clean_text(element.get_text())
+                # Handle turnover in billions/millions format
+                turnover_match = re.search(r'([\d,\.]+)\s*([BMK])', text, re.I)
+                if turnover_match:
+                    value = self._parse_number(turnover_match.group(1))
+                    unit = turnover_match.group(2).upper()
+                    if value and unit:
+                        multiplier = {'B': 1e9, 'M': 1e6, 'K': 1e3}.get(unit, 1)
+                        return value * multiplier
+                # If no unit, try to parse as raw number
+                return self._parse_number(text)
+        except Exception as e:
+            logger.warning(f"Failed to extract turnover: {e}")
+        return None
+    
+    def _extract_change_data(self, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float]]:
+        """Extract daily change point and percentage using CSS selector."""
+        try:
+            # Get the span that contains the full text (including arrow, change point, and percentage)
+            element = soup.select_one("#hkIdxContainer > div.hkidx-change.cls > span")
+            if element:
+                text = self._clean_text(element.get_text())
+                # Remove the arrow symbols (▲ or ▼) from the beginning
+                text = re.sub(r'^[▲▼]\s*', '', text)
+                return self._parse_change_string(text)
+        except Exception as e:
+            logger.warning(f"Failed to extract change data: {e}")
+        return None, None
+
     def get_hsi_data(self) -> Dict[str, Any]:
-        """Scrape current HSI data from AAStocks."""
+        """Scrape current HSI data from AAStocks using specific CSS selectors."""
         logger.info("Scraping HSI data...")
         
         soup = self._get_page(self.HSI_URL)
         
         try:
-            # Find the main HSI data section
-            # AAStocks typically has the index data in a specific table or div
-            # We'll need to look for the current value, change, and percentage
-            
-            # Look for the main index value
-            current_point = None
-            daily_change_point = None
-            daily_change_percent = None
-            turnover = None
-            
-            # Method 1: Look for table rows with HSI data
-            tables = soup.find_all('table')
-            for table in tables:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 4:
-                        # Check if this looks like HSI data
-                        text = ' '.join([cell.get_text() for cell in cells])
-                        if 'HSI' in text or 'Hang Seng' in text:
-                            # Try to extract values from cells
-                            for i, cell in enumerate(cells):
-                                cell_text = self._clean_text(cell.get_text())
-                                if re.match(r'^\d{1,2},?\d{3,5}', cell_text):  # Looks like index value
-                                    current_point = self._parse_number(cell_text)
-                                elif re.match(r'^[+-]?\d+', cell_text) and '.' in cell_text:
-                                    if daily_change_point is None:
-                                        daily_change_point = self._parse_number(cell_text)
-                                elif '%' in cell_text:
-                                    percent_text = cell_text.replace('%', '')
-                                    daily_change_percent = self._parse_number(percent_text)
-            
-            # Method 2: Look for specific class names or IDs (common in AAStocks)
-            if current_point is None:
-                # Try to find elements with common financial data patterns
-                for element in soup.find_all(['span', 'div', 'td'], 
-                                           class_=re.compile(r'(price|value|index)', re.I)):
-                    text = self._clean_text(element.get_text())
-                    if re.match(r'^\d{1,2},?\d{3,5}', text):
-                        current_point = self._parse_number(text)
-                        break
-            
-            # Method 3: Look for turnover data
-            for element in soup.find_all(text=re.compile(r'turnover|volume', re.I)):
-                parent = element.parent
-                if parent:
-                    # Look for nearby numeric values
-                    siblings = parent.find_next_siblings()[:3]  # Check next few siblings
-                    for sibling in siblings:
-                        if isinstance(sibling, Tag):
-                            text = self._clean_text(sibling.get_text())
-                            # Look for billion/million patterns
-                            if re.search(r'\d+.*[BMK]', text, re.I):
-                                turnover_match = re.search(r'([\d,\.]+)\s*([BMK])', text, re.I)
-                                if turnover_match:
-                                    value = self._parse_number(turnover_match.group(1))
-                                    unit = turnover_match.group(2).upper()
-                                    if value and unit:
-                                        multiplier = {'B': 1e9, 'M': 1e6, 'K': 1e3}.get(unit, 1)
-                                        turnover = value * multiplier
-                                        break
-            
-            # If we still don't have data, try a more general approach
-            if current_point is None:
-                # Look for large numbers that could be the index value
-                all_text = soup.get_text()
-                numbers = re.findall(r'\b\d{1,2},?\d{3,5}(?:\.\d{1,2})?\b', all_text)
-                for num_str in numbers:
-                    num = self._parse_number(num_str)
-                    if num and 15000 <= num <= 35000:  # Reasonable HSI range
-                        current_point = num
-                        break
+            # Extract data using targeted CSS selectors
+            current_point = self._extract_current_point(soup)
+            turnover = self._extract_turnover(soup)
+            daily_change_point, daily_change_percent = self._extract_change_data(soup)
             
             return {
                 "current_point": current_point,
