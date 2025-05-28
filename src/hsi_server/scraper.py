@@ -124,13 +124,31 @@ class HSIDataScraper:
     def _extract_change_data(self, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float]]:
         """Extract daily change point and percentage using CSS selector."""
         try:
-            # Get the span that contains the full text (including arrow, change point, and percentage)
+            # First, get the arrow direction from the inner span
+            arrow_element = soup.select_one("#hkIdxContainer > div.hkidx-change.cls > span > span")
+            is_negative = False
+            if arrow_element:
+                arrow_text = self._clean_text(arrow_element.get_text())
+                is_negative = "▼" in arrow_text
+                logger.debug(f"Arrow direction: {'▼ (negative)' if is_negative else '▲ (positive)'}")
+            
+            # Get the full text that contains the change values
             element = soup.select_one("#hkIdxContainer > div.hkidx-change.cls > span")
             if element:
                 text = self._clean_text(element.get_text())
-                # Remove the arrow symbols (▲ or ▼) from the beginning
+                # Remove the arrow symbols to get just the numeric values
                 text = re.sub(r'^[▲▼]\s*', '', text)
-                return self._parse_change_string(text)
+                
+                # Parse the change values (always positive from text)
+                point_change, percent_change = self._parse_change_string(text)
+                
+                # Apply negative sign if the arrow indicates down movement
+                if is_negative and point_change is not None:
+                    point_change = -point_change
+                if is_negative and percent_change is not None:
+                    percent_change = -percent_change
+                
+                return point_change, percent_change
         except Exception as e:
             logger.warning(f"Failed to extract change data: {e}")
         return None, None

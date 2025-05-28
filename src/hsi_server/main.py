@@ -104,9 +104,14 @@ class HSIServer:
             
             except Exception as e:
                 logger.error(f"Error handling tool {name}: {e}")
+                error_response = {
+                    "success": False,
+                    "error": str(e),
+                    "message": f"Failed to execute tool {name}"
+                }
                 return [TextContent(
                     type="text",
-                    text=f"Error: {str(e)}"
+                    text=json.dumps(error_response, indent=2, ensure_ascii=False)
                 )]
     
     async def _handle_get_hsi_data(self) -> List[TextContent]:

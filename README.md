@@ -139,8 +139,11 @@ python -m src.hsi_server.main
 
 ### Using MCP Inspector
 ```bash
-npx @modelcontextprotocol/inspector python -m src.hsi_server.main
+# Create a config file first (see mcp_config.json in project root)
+npx @modelcontextprotocol/inspector --config mcp_config.json --server hsi-server
 ```
+
+Then open http://127.0.0.1:6274 in your browser to use the interactive inspector.
 
 ## Troubleshooting
 

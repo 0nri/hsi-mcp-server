@@ -149,10 +149,11 @@ class TestHSIDataScraper:
         assert point == 14.76
         assert percent == 0.06
         
-        # Test negative changes
-        point, percent = scraper._parse_change_string("-25.43 (-1.23%)")
-        assert point == -25.43
-        assert percent == -1.23
+        # Test negative changes (note: _parse_change_string extracts positive values,
+        # the negative sign is applied in _extract_change_data based on arrow direction)
+        point, percent = scraper._parse_change_string("25.43 (1.23%)")
+        assert point == 25.43
+        assert percent == 1.23
         
         # Test with commas
         point, percent = scraper._parse_change_string("1,234.56 (2.34%)")
@@ -168,6 +169,44 @@ class TestHSIDataScraper:
         point, percent = scraper._parse_change_string("")
         assert point is None
         assert percent is None
+
+    @pytest.mark.integration
+    def test_arrow_direction_logic(self):
+        """Test that arrow direction correctly determines positive/negative values."""
+        scraper = HSIDataScraper()
+        
+        # Create mock HTML for testing arrow direction logic
+        from bs4 import BeautifulSoup
+        
+        # Test positive change (▲)
+        positive_html = '''
+        <div id="hkIdxContainer">
+            <div class="hkidx-change cls">
+                <span class="pos">
+                    <span class="arrowUpDn">▲</span>67.25 (0.29%)
+                </span>
+            </div>
+        </div>
+        '''
+        soup_pos = BeautifulSoup(positive_html, 'html.parser')
+        point_pos, percent_pos = scraper._extract_change_data(soup_pos)
+        assert point_pos == 67.25, f"Expected positive 67.25, got {point_pos}"
+        assert percent_pos == 0.29, f"Expected positive 0.29, got {percent_pos}"
+        
+        # Test negative change (▼)
+        negative_html = '''
+        <div id="hkIdxContainer">
+            <div class="hkidx-change cls">
+                <span class="neg">
+                    <span class="arrowUpDn">▼</span>45.18 (0.22%)
+                </span>
+            </div>
+        </div>
+        '''
+        soup_neg = BeautifulSoup(negative_html, 'html.parser')
+        point_neg, percent_neg = scraper._extract_change_data(soup_neg)
+        assert point_neg == -45.18, f"Expected negative -45.18, got {point_neg}"
+        assert percent_neg == -0.22, f"Expected negative -0.22, got {percent_neg}"
 
     @pytest.mark.integration
     def test_live_hsi_data_scraping(self):
