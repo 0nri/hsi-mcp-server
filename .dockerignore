@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Local environment files
+.env
+
+# Test files and reports (if not needed in image)
+tests/
+htmlcov/
+.pytest_cache/
+.coverage
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

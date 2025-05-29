@@ -53,13 +53,21 @@ gcloud auth application-default login
    GEMINI_LOCATION=us-central1
    GEMINI_MODEL=gemini-2.0-flash-lite-001
    LOG_LEVEL=INFO
+   MCP_SERVER_MODE=stdio # "stdio" for local, "http" for Docker/Cloud Run
+   PORT=8080 # Port for HTTP mode, Cloud Run will override this
    ```
 
 ## Usage
 
-### With MCP Clients
+The server can run in two modes, configured by the `MCP_SERVER_MODE` environment variable:
+- `stdio` (default): For local development and integration with clients using stdio.
+- `http`: For deployment as an HTTP server, e.g., in Docker or Cloud Run.
 
-#### Cline/Claude Desktop
+### 1. Stdio Mode (Local Development)
+
+Set `MCP_SERVER_MODE=stdio` in your `.env` file (or leave it unset, as it defaults to stdio).
+
+#### Cline/Claude Desktop (Stdio)
 Add to your MCP settings:
 
 ```json
@@ -82,6 +90,58 @@ Add to your MCP settings:
 Then ask questions like:
 - "What's the current HSI performance?"
 - "Give me a summary of today's Hong Kong market news"
+
+### 2. HTTP Mode (Docker / Cloud Run)
+
+Set `MCP_SERVER_MODE=http` in your environment. The server will start an HTTP server on the port specified by the `PORT` environment variable (defaults to 8080).
+
+#### Building and Running with Docker (Local Test)
+
+1.  **Build the Docker image**:
+    ```bash
+    docker build -t hsi-mcp-server .
+    ```
+
+2.  **Run the Docker container**:
+    Replace `your-project-id`, etc., with your actual Google Cloud configuration.
+    ```bash
+    docker run -p 8080:8080 \
+      -e GOOGLE_CLOUD_PROJECT="your-project-id" \
+      -e GEMINI_LOCATION="us-central1" \
+      -e GEMINI_MODEL="gemini-2.0-flash-lite-001" \
+      -e MCP_SERVER_MODE="http" \
+      -e PORT="8080" \
+      hsi-mcp-server
+    ```
+    The server will be accessible at `http://localhost:8080`.
+
+#### Cline/Claude Desktop (HTTP)
+Add to your MCP settings, adjusting `host` and `port` if your Docker container is running elsewhere or on a different port:
+
+```json
+{
+  "mcpServers": {
+    "hsi-server-http": {
+      "type": "http",
+      "host": "localhost",
+      "port": 8080,
+      "path": "/mcp", // The endpoint defined in main.py
+      "headers": { // Optional headers if needed
+        // "Authorization": "Bearer your_token" 
+      },
+      "initializationOptions": {
+        // Any specific initialization options for HTTP mode if supported
+      }
+    }
+  }
+}
+```
+The `list_tools` equivalent for HTTP clients would typically be a GET request to a `/tools` endpoint (which has been added).
+
+#### Deploying to Cloud Run
+1.  Build and push your Docker image to Google Container Registry (GCR) or Artifact Registry.
+2.  Deploy to Cloud Run, ensuring you set the required environment variables (`GOOGLE_CLOUD_PROJECT`, `GEMINI_LOCATION`, `GEMINI_MODEL`, `MCP_SERVER_MODE="http"`). Cloud Run will automatically provide and use the `PORT` environment variable.
+3.  Configure your MCP client to point to the Cloud Run service URL using `HttpServerParameters`, similar to the Docker example above but with the Cloud Run URL as the host.
 
 ### Available Tools
 
