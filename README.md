@@ -94,6 +94,13 @@ Then ask questions like:
 ### 2. HTTP Mode (Docker / Cloud Run)
 
 Set `MCP_SERVER_MODE=http` in your environment. The server will start an HTTP server on the port specified by the `PORT` environment variable (defaults to 8080).
+When in HTTP mode, the server now primarily offers two types of HTTP-based MCP transport:
+1.  **Simple HTTP/JSON Endpoints**:
+    *   `GET /tools`: For listing available tools.
+    *   `POST /mcp`: For calling tools with a JSON payload.
+    These are suitable for simple clients or scripting.
+2.  **Streamable HTTP (SSE-like) Transport**:
+    *   Mounted at `/mcp-streamable`. This single endpoint handles the full MCP communication lifecycle (GET for connection handshake, POST for messages, SSE for server-to-client events) using `mcp.server.streamable_http_manager.StreamableHTTPSessionManager`. This is the recommended transport for clients like MCP Inspector or Agent Development Kit that support "streamable-http" or "sse" (when referring to this manager's behavior).
 
 #### Building and Running with Docker (Local Test)
 
@@ -136,7 +143,33 @@ Add to your MCP settings, adjusting `host` and `port` if your Docker container i
   }
 }
 ```
-The `list_tools` equivalent for HTTP clients would typically be a GET request to a `/tools` endpoint (which has been added).
+The `list_tools` equivalent for simple HTTP clients is the `GET /tools` endpoint.
+
+#### MCP Client Configuration for Streamable HTTP (e.g., Inspector, ADK)
+When `MCP_SERVER_MODE=http` is active, clients supporting the "streamable-http" transport (which is often SSE-based and includes resumability) should connect to the `/mcp-streamable` endpoint.
+
+**Example for MCP Inspector (`mcp_config.json`):**
+```json
+{
+  "mcpServers": {
+    "hsi-server-streamable": {
+      "type": "streamable-http", // Use this type for StreamableHTTPSessionManager
+      "url": "http://localhost:8080/mcp-streamable", // Base URL for the streamable endpoint
+      // "messagesPath" is usually not needed as the manager handles sub-paths.
+      // "useTLS": false, // Set to true for HTTPS deployments (e.g., Cloud Run)
+      "headers": { // Optional headers if needed
+        // "Authorization": "Bearer your_token" 
+      },
+      "initializationOptions": {
+        // Any specific initialization options your server might expect
+      }
+    }
+  }
+}
+```
+**Note**:
+- The `type` should ideally be `"streamable-http"` if your client/SDK (like Inspector) specifically recognizes it for `StreamableHTTPSessionManager`. If not, `"sse"` might work if the underlying protocol is compatible, but "streamable-http" is more precise for this manager.
+- The `url` points to the base path where `StreamableHTTPSessionManager` is mounted (e.g., `http://localhost:8080/mcp-streamable`). The manager handles specific methods (GET for connect, POST for messages) at this path.
 
 #### Deploying to Cloud Run
 1.  Build and push your Docker image to Google Container Registry (GCR) or Artifact Registry.
