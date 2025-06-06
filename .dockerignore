@@ -1,37 +1,63 @@
-# Git
-.git
-.gitignore
-
-# Python
+# Development and testing files
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-env/
-venv/
-.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# IDEs and editors
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS-specific
-.DS_Store
-Thumbs.db
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Testing
+tests/
 
 # Local environment files
 .env
+.env.local
+.env.*.local
 
-# Test files and reports (if not needed in image)
-tests/
-htmlcov/
-.pytest_cache/
-.coverage
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# MCP config files (not needed in container)
+mcp_config*.json
+
+# Memory bank (not needed in production)
+memory-bank/
 
 # Build artifacts
-dist/
 build/
+dist/
 *.egg-info/
+
+# Docker
+Dockerfile*
+docker-compose*

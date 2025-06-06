@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin
 
 import requests
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ class HSIDataScraper:
     
     def __init__(self) -> None:
         self.session = requests.Session()
-        # Set headers to mimic a real browser
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -130,7 +129,6 @@ class HSIDataScraper:
             if arrow_element:
                 arrow_text = self._clean_text(arrow_element.get_text())
                 is_negative = "▼" in arrow_text
-                logger.debug(f"Arrow direction: {'▼ (negative)' if is_negative else '▲ (positive)'}")
             
             # Get the full text that contains the change values
             element = soup.select_one("#hkIdxContainer > div.hkidx-change.cls > span")
