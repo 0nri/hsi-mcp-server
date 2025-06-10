@@ -10,8 +10,10 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict
+from functools import wraps
+from typing import Any, Dict, Callable, Optional
 
+from cachetools import TTLCache
 from dotenv import load_dotenv
 from mcp.server import FastMCP
 
@@ -34,6 +36,70 @@ logger = logging.getLogger("hsi_server")
 scraper = HSIDataScraper()
 quote_scraper = StockQuoteScraper()
 gemini_client: GeminiClient | None = None
+
+# Cache configuration
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "false").lower() == "true"
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+
+# Initialize cache if enabled
+cache: Optional[TTLCache] = None
+if CACHE_ENABLED:
+    cache = TTLCache(maxsize=100, ttl=CACHE_TTL_SECONDS)
+    logger.info(f"Cache enabled with TTL {CACHE_TTL_SECONDS} seconds")
+else:
+    logger.info("Cache disabled")
+
+
+def cache_if_enabled(key_func: Callable[..., str]):
+    """Decorator to cache function results if caching is enabled.
+    
+    Args:
+        key_func: Function that takes the same arguments as the decorated function
+                 and returns a cache key string
+    
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable[..., str]) -> Callable[..., str]:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> str:
+            # If cache is disabled, call function directly
+            if not CACHE_ENABLED or cache is None:
+                return func(*args, **kwargs)
+            
+            # Generate cache key
+            try:
+                cache_key = key_func(*args, **kwargs)
+            except Exception as e:
+                logger.warning(f"Failed to generate cache key for {func.__name__}: {e}")
+                return func(*args, **kwargs)
+            
+            # Check cache first
+            try:
+                if cache_key in cache:
+                    logger.debug(f"Cache hit for {func.__name__} with key: {cache_key}")
+                    return cache[cache_key]
+            except Exception as e:
+                logger.warning(f"Cache read failed for {func.__name__}: {e}")
+            
+            # Cache miss - call function
+            logger.debug(f"Cache miss for {func.__name__} with key: {cache_key}")
+            result = func(*args, **kwargs)
+            
+            # Only cache successful responses
+            try:
+                response_data = json.loads(result)
+                if response_data.get("success", False):
+                    cache[cache_key] = result
+                    logger.debug(f"Cached result for {func.__name__} with key: {cache_key}")
+                else:
+                    logger.debug(f"Not caching failed response for {func.__name__}")
+            except (json.JSONDecodeError, Exception) as e:
+                logger.warning(f"Failed to parse response for caching {func.__name__}: {e}")
+            
+            return result
+        return wrapper
+    return decorator
 
 
 def _create_json_response(success: bool, data: Any = None, error: str = None) -> str:
@@ -79,6 +145,7 @@ mcp = FastMCP("HSI MCP Server")
 
 
 @mcp.tool()
+@cache_if_enabled(key_func=lambda: "hsi_data")
 def get_hsi_data() -> str:
     """Get current Hang Seng Index data including point, daily change, turnover, and timestamp.
 
@@ -104,6 +171,7 @@ def get_hsi_data() -> str:
 
 
 @mcp.tool()
+@cache_if_enabled(key_func=lambda limit=10: f"hsi_news_{limit}")
 def get_hsi_news_summary(limit: int = 10) -> str:
     """Get top news headlines with an AI-generated summary.
 
@@ -163,6 +231,7 @@ def get_hsi_news_summary(limit: int = 10) -> str:
 
 
 @mcp.tool()
+@cache_if_enabled(key_func=lambda symbol_or_company: f"stock_quote_{symbol_or_company.strip()}")
 def get_stock_quote(symbol_or_company: str) -> str:
     """Get current stock quote data for a Hong Kong listed company by symbol or company name.
 
