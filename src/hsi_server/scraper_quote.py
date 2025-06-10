@@ -360,41 +360,100 @@ class StockQuoteScraper:
         return None, None
 
     def _extract_company_name(self, soup: BeautifulSoup) -> Optional[str]:
-        """Extract company name from the page."""
+        """Extract company name from the page using multiple strategies."""
         try:
-            # Look for company name in common locations
-            name_selectors = [
-                "#SQ_Name",  # Stock bar name
-                ".stockName",
-                ".company-name",
-                "[class*='name']",
-                "h1",
-                "h2",
-            ]
+            # Strategy 1: Look for JavaScript variables that might contain company name
+            scripts = soup.find_all("script")
+            for script in scripts:
+                if script.string:
+                    script_text = script.string
+                    
+                    # Look for common patterns where company name might be stored
+                    patterns = [
+                        r'StockName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                        r'CompanyName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                        r'stockName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                        r'companyName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                        r'name["\']?\s*[:=]\s*["\']([^"\']{10,})["\']',  # Longer names only
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.search(pattern, script_text, re.IGNORECASE)
+                        if match:
+                            company_name = self._clean_text(match.group(1))
+                            if company_name and len(company_name) > 3:
+                                # Filter out obvious non-company names
+                                invalid_patterns = [
+                                    "quote", "chart", "analysis", "hk stock", "real-time", "free",
+                                    "sb-", "txt", "btn", "div", "span", "css", "js", "function",
+                                    "var", "class", "id", "element", "container", "wrapper",
+                                    "_", "-symbol", "-btn", "-txt", "ctrl", "control"
+                                ]
+                                
+                                # Check if it looks like a CSS class/ID or JavaScript variable
+                                is_valid_company_name = True
+                                company_lower = company_name.lower()
+                                
+                                # Reject if contains common web element patterns
+                                if any(pattern in company_lower for pattern in invalid_patterns):
+                                    is_valid_company_name = False
+                                
+                                # Reject if it's mostly non-alphabetic characters
+                                alpha_chars = sum(1 for c in company_name if c.isalpha())
+                                if alpha_chars / len(company_name) < 0.6:  # Less than 60% alphabetic
+                                    is_valid_company_name = False
+                                
+                                # Reject if it contains common file extensions or web terms
+                                if any(ext in company_lower for ext in [".js", ".css", ".html", "www.", "http"]):
+                                    is_valid_company_name = False
+                                
+                                if is_valid_company_name:
+                                    logger.info(f"Found company name in JavaScript: '{company_name}'")
+                                    return company_name
+                                else:
+                                    logger.debug(f"Rejected potential company name: '{company_name}' (appears to be web element)")
 
-            for selector in name_selectors:
-                elements = soup.select(selector)
-                for element in elements:
-                    text = self._clean_text(element.get_text())
-                    # Look for text that might be a company name
-                    if text and len(text) > 3 and len(text) < 100:
-                        # Filter out obvious non-company names
-                        if not any(
-                            keyword in text.lower()
-                            for keyword in ["quote", "chart", "analysis", "market"]
-                        ):
-                            logger.info(f"Found potential company name: {text}")
-                            return text
-
-            # Look in page title
+            # Strategy 2: Look in page title for company name
             title = soup.find("title")
             if title:
                 title_text = self._clean_text(title.get_text())
-                if "stock" in title_text.lower() and len(title_text) < 100:
-                    return title_text
+                # Extract company name from title like "HSBC HOLDINGS LIMITED (00005) Stock Quote - AAStocks"
+                if title_text:
+                    # Look for pattern: "COMPANY NAME (SYMBOL)"
+                    title_match = re.match(r'^([^(]+)\s*\(\d{5}\)', title_text)
+                    if title_match:
+                        company_name = self._clean_text(title_match.group(1))
+                        if company_name and len(company_name) > 3:
+                            logger.info(f"Found company name in page title: '{company_name}'")
+                            return company_name
+
+            # Strategy 3: Look for meta tags that might contain company info
+            meta_tags = soup.find_all("meta")
+            for meta in meta_tags:
+                if meta.get("name") in ["description", "keywords", "title"]:
+                    content = meta.get("content", "")
+                    if content:
+                        # Look for company name patterns in meta content
+                        meta_match = re.search(r'^([^(,]+)\s*\(\d{5}\)', content)
+                        if meta_match:
+                            company_name = self._clean_text(meta_match.group(1))
+                            if company_name and len(company_name) > 3:
+                                logger.info(f"Found company name in meta tag: '{company_name}'")
+                                return company_name
+
+            # Strategy 4: Check the original #SQ_Name element (for completeness)
+            element = soup.select_one("#SQ_Name")
+            if element:
+                text = self._clean_text(element.get_text())
+                logger.debug(f"#SQ_Name element contains: '{text}'")
+                if text and len(text) > 3:
+                    logger.info(f"Found company name in #SQ_Name: '{text}'")
+                    return text
 
         except Exception as e:
-            logger.warning(f"Failed to extract company name: {e}")
+            logger.error(f"Failed to extract company name: {e}")
+        
+        logger.warning("Company name extraction failed with all strategies, returning None")
         return None
 
     def _extract_last_updated_time(self, soup: BeautifulSoup) -> Optional[str]:
@@ -529,8 +588,16 @@ class StockQuoteScraper:
 
         return None, None
 
-    def get_stock_quote(self, symbol: str) -> Dict[str, Any]:
-        """Get stock quote data from AAStocks using AJAX endpoint."""
+    def get_stock_quote(self, symbol: str, company_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get stock quote data from AAStocks using AJAX endpoint.
+        
+        Args:
+            symbol: Hong Kong stock symbol (e.g., "00005", "388")
+            company_name: Optional company name to include in response
+        
+        Returns:
+            Dict containing stock quote data
+        """
         logger.info(f"Getting stock quote for symbol: {symbol}")
 
         try:
@@ -574,14 +641,13 @@ class StockQuoteScraper:
             )
             last_updated_time = stock_data.get("e", "")
 
-            # Also get company name from the main page
+            # Use provided company name or None
             page_url = self.QUOTE_URL_TEMPLATE.format(symbol=formatted_symbol)
-            try:
-                soup = self._get_page(page_url)
-                company_name = self._extract_company_name(soup)
-            except Exception as e:
-                logger.warning(f"Failed to get company name from main page: {e}")
-                company_name = None
+            
+            if company_name:
+                logger.info(f"Using provided company name for {formatted_symbol}: {company_name}")
+            else:
+                logger.debug(f"No company name provided for {formatted_symbol}")
 
             logger.info(f"Successfully extracted quote data for {formatted_symbol}")
 

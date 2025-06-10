@@ -254,6 +254,7 @@ def get_stock_quote(symbol_or_company: str) -> str:
         input_cleaned = symbol_or_company.strip()
 
         # Determine input type: numeric symbol vs company name
+        company_name = None
         if any(char.isdigit() for char in input_cleaned):
             symbol = input_cleaned
             logger.debug(f"Processing as stock symbol: {symbol}")
@@ -261,13 +262,15 @@ def get_stock_quote(symbol_or_company: str) -> str:
             logger.debug(f"Processing as company name: {input_cleaned}")
             try:
                 client = get_gemini_client()
-                symbol = client.lookup_stock_symbol(input_cleaned)
-                if not symbol:
+                lookup_result = client.lookup_stock_symbol(input_cleaned)
+                if not lookup_result:
                     return _create_json_response(
                         success=False,
                         error=f"Could not find Hong Kong stock symbol for company: {input_cleaned}",
                     )
-                logger.info(f"Symbol lookup successful: {input_cleaned} -> {symbol}")
+                symbol = lookup_result["symbol"]
+                company_name = lookup_result["company_name"]
+                logger.info(f"Symbol lookup successful: {input_cleaned} -> {symbol} ({company_name})")
             except Exception as e:
                 logger.error(f"Symbol lookup failed for {input_cleaned}: {e}")
                 return _create_json_response(
@@ -277,7 +280,7 @@ def get_stock_quote(symbol_or_company: str) -> str:
 
         # Retrieve stock quote data
         logger.debug(f"Fetching quote data for symbol: {symbol}")
-        quote_data = quote_scraper.get_stock_quote(symbol)
+        quote_data = quote_scraper.get_stock_quote(symbol, company_name=company_name)
         return _create_json_response(success=True, data=quote_data)
 
     except Exception as e:
