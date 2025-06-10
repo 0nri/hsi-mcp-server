@@ -32,18 +32,18 @@ class GeminiClient:
         "summarization": {
             "default": "gemini-2.0-flash-lite-001",
             "env_var": "GEMINI_SUMMARIZATION_MODEL",
-            "description": "Cost-effective model for text summarization"
+            "description": "Cost-effective model for text summarization",
         },
         "grounding": {
-            "default": "gemini-2.0-flash-001", 
+            "default": "gemini-2.0-flash-001",
             "env_var": "GEMINI_GROUNDING_MODEL",
-            "description": "Full model with Google Search grounding support"
+            "description": "Full model with Google Search grounding support",
         },
         "default": {
             "default": "gemini-2.0-flash-lite-001",
             "env_var": "GEMINI_MODEL",
-            "description": "Default model for general use"
-        }
+            "description": "Default model for general use",
+        },
     }
 
     # Generation configuration presets
@@ -79,8 +79,8 @@ class GeminiClient:
             vertexai.init(project=self.project_id, location=self.location)
 
             # Initialize model cache
-            self._models = {}
-            
+            self._models: Dict[str, GenerativeModel] = {}
+
             # Log model configuration
             self._log_model_configuration()
 
@@ -98,25 +98,25 @@ class GeminiClient:
 
     def _get_model(self, model_type: str = "default") -> GenerativeModel:
         """Get or create a model instance for the specified type.
-        
+
         Args:
             model_type: Type of model needed ("summarization", "grounding", "default")
-            
+
         Returns:
             GenerativeModel instance for the specified type
         """
         if model_type not in self.MODEL_CONFIGS:
             logger.warning(f"Unknown model type '{model_type}', using 'default'")
             model_type = "default"
-        
+
         # Return cached model if available
         if model_type in self._models:
             return self._models[model_type]
-        
+
         # Get model name from environment or use default
         config = self.MODEL_CONFIGS[model_type]
         model_name = os.getenv(config["env_var"], config["default"])
-        
+
         # Create and cache model
         try:
             model = GenerativeModel(model_name)
@@ -127,7 +127,7 @@ class GeminiClient:
             logger.error(f"Failed to create {model_type} model '{model_name}': {e}")
             raise
 
-    @property 
+    @property
     def model(self) -> GenerativeModel:
         """Backward compatibility property for default model."""
         return self._get_model("default")
@@ -242,7 +242,7 @@ Summary:"""
         regions = [theme for theme, _ in top_themes if theme in ["china", "us"]]
         if regions:
             summary_parts.append(
-                f"International focus on {', '.join(regions.upper() if r == 'us' else r.title() for r in regions)}"
+                f"International focus on {', '.join(r.upper() if r == 'us' else r.title() for r in regions)}"
             )
 
         if summary_parts:
@@ -300,13 +300,17 @@ If not found, respond "NOT_FOUND".
 Company: {company_name}
 Response:"""
 
-    def _try_grounded_lookup(self, prompt: str, company_name: str) -> Optional[Dict[str, str]]:
+    def _try_grounded_lookup(
+        self, prompt: str, company_name: str
+    ) -> Optional[Dict[str, str]]:
         """Attempt symbol and company name lookup using Google Search grounding."""
         try:
             # Use grounding-specific model that supports Google Search grounding
             grounding_config = self.MODEL_CONFIGS["grounding"]
-            grounding_model_name = os.getenv(grounding_config["env_var"], grounding_config["default"])
-            
+            grounding_model_name = os.getenv(
+                grounding_config["env_var"], grounding_config["default"]
+            )
+
             grounded_model = GenerativeModel(
                 grounding_model_name,
                 tools=[
@@ -321,7 +325,9 @@ Response:"""
             )
 
             if response.text:
-                result = self._extract_symbol_and_company_from_response(response.text.strip())
+                result = self._extract_symbol_and_company_from_response(
+                    response.text.strip()
+                )
                 if result:
                     logger.info(
                         f"Grounded lookup successful: {company_name} → {result['symbol']} ({result['company_name']})"
@@ -333,7 +339,9 @@ Response:"""
 
         return None
 
-    def _try_fallback_lookup(self, prompt: str, company_name: str) -> Optional[Dict[str, str]]:
+    def _try_fallback_lookup(
+        self, prompt: str, company_name: str
+    ) -> Optional[Dict[str, str]]:
         """Attempt symbol and company name lookup using regular Gemini without grounding."""
         try:
             response = self.model.generate_content(
@@ -341,7 +349,9 @@ Response:"""
             )
 
             if response.text:
-                result = self._extract_symbol_and_company_from_response(response.text.strip())
+                result = self._extract_symbol_and_company_from_response(
+                    response.text.strip()
+                )
                 if result:
                     logger.info(
                         f"Fallback lookup successful: {company_name} → {result['symbol']} ({result['company_name']})"
@@ -355,9 +365,11 @@ Response:"""
 
         return None
 
-    def _extract_symbol_and_company_from_response(self, response_text: str) -> Optional[Dict[str, str]]:
+    def _extract_symbol_and_company_from_response(
+        self, response_text: str
+    ) -> Optional[Dict[str, str]]:
         """Extract stock symbol and company name from structured Gemini response.
-        
+
         Expected format: "Symbol: 00005, Company: HSBC Holdings Limited"
         """
         if not response_text:
@@ -370,31 +382,25 @@ Response:"""
         # Parse structured response format
         pattern = r"Symbol:\s*(\d{1,5}),\s*Company:\s*(.+)"
         match = re.search(pattern, response_text, re.IGNORECASE)
-        
+
         if match:
             symbol_raw = match.group(1)
             company_name = match.group(2).strip()
-            
+
             # Format symbol to 5 digits
             symbol = symbol_raw.zfill(5)
-            
+
             # Validate company name
             if company_name and len(company_name) > 2:
-                return {
-                    "symbol": symbol,
-                    "company_name": company_name
-                }
-        
+                return {"symbol": symbol, "company_name": company_name}
+
         # Fallback: try to extract just the symbol using old method
         symbol = self._extract_symbol_from_response(response_text)
         if symbol:
             logger.warning(f"Could only extract symbol from response: {response_text}")
             # Use a generic company name as fallback
-            return {
-                "symbol": symbol,
-                "company_name": f"Company {symbol}"
-            }
-        
+            return {"symbol": symbol, "company_name": f"Company {symbol}"}
+
         return None
 
     def _extract_symbol_from_response(self, response_text: str) -> Optional[str]:

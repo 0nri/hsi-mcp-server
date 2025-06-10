@@ -367,7 +367,7 @@ class StockQuoteScraper:
             for script in scripts:
                 if script.string:
                     script_text = script.string
-                    
+
                     # Look for common patterns where company name might be stored
                     patterns = [
                         r'StockName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
@@ -376,7 +376,7 @@ class StockQuoteScraper:
                         r'companyName["\']?\s*[:=]\s*["\']([^"\']+)["\']',
                         r'name["\']?\s*[:=]\s*["\']([^"\']{10,})["\']',  # Longer names only
                     ]
-                    
+
                     for pattern in patterns:
                         match = re.search(pattern, script_text, re.IGNORECASE)
                         if match:
@@ -384,34 +384,70 @@ class StockQuoteScraper:
                             if company_name and len(company_name) > 3:
                                 # Filter out obvious non-company names
                                 invalid_patterns = [
-                                    "quote", "chart", "analysis", "hk stock", "real-time", "free",
-                                    "sb-", "txt", "btn", "div", "span", "css", "js", "function",
-                                    "var", "class", "id", "element", "container", "wrapper",
-                                    "_", "-symbol", "-btn", "-txt", "ctrl", "control"
+                                    "quote",
+                                    "chart",
+                                    "analysis",
+                                    "hk stock",
+                                    "real-time",
+                                    "free",
+                                    "sb-",
+                                    "txt",
+                                    "btn",
+                                    "div",
+                                    "span",
+                                    "css",
+                                    "js",
+                                    "function",
+                                    "var",
+                                    "class",
+                                    "id",
+                                    "element",
+                                    "container",
+                                    "wrapper",
+                                    "_",
+                                    "-symbol",
+                                    "-btn",
+                                    "-txt",
+                                    "ctrl",
+                                    "control",
                                 ]
-                                
+
                                 # Check if it looks like a CSS class/ID or JavaScript variable
                                 is_valid_company_name = True
                                 company_lower = company_name.lower()
-                                
+
                                 # Reject if contains common web element patterns
-                                if any(pattern in company_lower for pattern in invalid_patterns):
+                                if any(
+                                    pattern in company_lower
+                                    for pattern in invalid_patterns
+                                ):
                                     is_valid_company_name = False
-                                
+
                                 # Reject if it's mostly non-alphabetic characters
-                                alpha_chars = sum(1 for c in company_name if c.isalpha())
-                                if alpha_chars / len(company_name) < 0.6:  # Less than 60% alphabetic
+                                alpha_chars = sum(
+                                    1 for c in company_name if c.isalpha()
+                                )
+                                if (
+                                    alpha_chars / len(company_name) < 0.6
+                                ):  # Less than 60% alphabetic
                                     is_valid_company_name = False
-                                
+
                                 # Reject if it contains common file extensions or web terms
-                                if any(ext in company_lower for ext in [".js", ".css", ".html", "www.", "http"]):
+                                if any(
+                                    ext in company_lower
+                                    for ext in [".js", ".css", ".html", "www.", "http"]
+                                ):
                                     is_valid_company_name = False
-                                
+
                                 if is_valid_company_name:
-                                    logger.info(f"Found company name in JavaScript: '{company_name}'")
+                                    logger.info(
+                                        f"Found company name in JavaScript: '{company_name}'"
+                                    )
                                     return company_name
                                 else:
-                                    logger.debug(f"Rejected potential company name: '{company_name}' (appears to be web element)")
+                                    logger.debug(
+                                        f"Rejected potential company name: '{company_name}' (appears to be web element)"
+                                    )
 
             # Strategy 2: Look in page title for company name
             title = soup.find("title")
@@ -420,11 +456,13 @@ class StockQuoteScraper:
                 # Extract company name from title like "HSBC HOLDINGS LIMITED (00005) Stock Quote - AAStocks"
                 if title_text:
                     # Look for pattern: "COMPANY NAME (SYMBOL)"
-                    title_match = re.match(r'^([^(]+)\s*\(\d{5}\)', title_text)
+                    title_match = re.match(r"^([^(]+)\s*\(\d{5}\)", title_text)
                     if title_match:
                         company_name = self._clean_text(title_match.group(1))
                         if company_name and len(company_name) > 3:
-                            logger.info(f"Found company name in page title: '{company_name}'")
+                            logger.info(
+                                f"Found company name in page title: '{company_name}'"
+                            )
                             return company_name
 
             # Strategy 3: Look for meta tags that might contain company info
@@ -434,11 +472,13 @@ class StockQuoteScraper:
                     content = meta.get("content", "")
                     if content:
                         # Look for company name patterns in meta content
-                        meta_match = re.search(r'^([^(,]+)\s*\(\d{5}\)', content)
+                        meta_match = re.search(r"^([^(,]+)\s*\(\d{5}\)", content)
                         if meta_match:
                             company_name = self._clean_text(meta_match.group(1))
                             if company_name and len(company_name) > 3:
-                                logger.info(f"Found company name in meta tag: '{company_name}'")
+                                logger.info(
+                                    f"Found company name in meta tag: '{company_name}'"
+                                )
                                 return company_name
 
             # Strategy 4: Check the original #SQ_Name element (for completeness)
@@ -452,8 +492,10 @@ class StockQuoteScraper:
 
         except Exception as e:
             logger.error(f"Failed to extract company name: {e}")
-        
-        logger.warning("Company name extraction failed with all strategies, returning None")
+
+        logger.warning(
+            "Company name extraction failed with all strategies, returning None"
+        )
         return None
 
     def _extract_last_updated_time(self, soup: BeautifulSoup) -> Optional[str]:
@@ -588,13 +630,15 @@ class StockQuoteScraper:
 
         return None, None
 
-    def get_stock_quote(self, symbol: str, company_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_stock_quote(
+        self, symbol: str, company_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Get stock quote data from AAStocks using AJAX endpoint.
-        
+
         Args:
             symbol: Hong Kong stock symbol (e.g., "00005", "388")
             company_name: Optional company name to include in response
-        
+
         Returns:
             Dict containing stock quote data
         """
@@ -643,9 +687,11 @@ class StockQuoteScraper:
 
             # Use provided company name or None
             page_url = self.QUOTE_URL_TEMPLATE.format(symbol=formatted_symbol)
-            
+
             if company_name:
-                logger.info(f"Using provided company name for {formatted_symbol}: {company_name}")
+                logger.info(
+                    f"Using provided company name for {formatted_symbol}: {company_name}"
+                )
             else:
                 logger.debug(f"No company name provided for {formatted_symbol}")
 

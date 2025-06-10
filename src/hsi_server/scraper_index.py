@@ -287,7 +287,7 @@ class HSIDataScraper:
         self, soup: BeautifulSoup, limit: int
     ) -> List[Dict[str, str]]:
         """Extract headlines from direct article/news links."""
-        headlines = []
+        headlines: List[Dict[str, str]] = []
         article_links = soup.find_all("a", href=re.compile(r"news|article"))
 
         for link in article_links[: limit * 2]:  # Get extra for filtering
@@ -303,7 +303,7 @@ class HSIDataScraper:
         self, soup: BeautifulSoup, limit: int
     ) -> List[Dict[str, str]]:
         """Extract headlines from news/article containers."""
-        headlines = []
+        headlines: List[Dict[str, str]] = []
         containers = soup.find_all(
             ["div", "section", "article"],
             class_=re.compile(r"news|headline|article", re.I),
@@ -331,7 +331,7 @@ class HSIDataScraper:
         self, soup: BeautifulSoup, limit: int
     ) -> List[Dict[str, str]]:
         """Extract headlines using keyword filtering as fallback."""
-        headlines = []
+        headlines: List[Dict[str, str]] = []
         all_links = soup.find_all("a")
 
         for link in all_links:
@@ -348,7 +348,7 @@ class HSIDataScraper:
 
         return headlines
 
-    def _process_headline_link(self, link) -> Optional[Dict[str, str]]:
+    def _process_headline_link(self, link: Any) -> Optional[Dict[str, str]]:
         """Process a single link element into a headline dictionary."""
         headline_text = self._clean_text(link.get_text())
         if not headline_text:

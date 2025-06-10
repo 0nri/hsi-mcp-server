@@ -117,6 +117,7 @@ class TestToolFunctions:
         mock_scraper.get_hsi_data.assert_called_once()
 
     @patch("src.hsi_server.main.scraper")
+    @patch("src.hsi_server.main.CACHE_ENABLED", False)
     def test_get_hsi_data_error(self, mock_scraper):
         """Test HSI data retrieval error handling."""
         # Mock the scraper to raise an exception
@@ -248,7 +249,7 @@ class TestStockQuoteToolFunction:
 
         assert response_data["success"] is True
         assert response_data["data"] == mock_data
-        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005")
+        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005", company_name=None)
 
     @patch("src.hsi_server.main.get_gemini_client")
     @patch("src.hsi_server.main.quote_scraper")
@@ -258,7 +259,10 @@ class TestStockQuoteToolFunction:
         """Test successful stock quote retrieval with company name lookup."""
         # Mock Gemini client lookup
         mock_gemini_client = Mock()
-        mock_gemini_client.lookup_stock_symbol.return_value = "00005"
+        mock_gemini_client.lookup_stock_symbol.return_value = {
+            "symbol": "00005",
+            "company_name": "HSBC Holdings Limited"
+        }
         mock_get_gemini_client.return_value = mock_gemini_client
 
         # Mock the scraper response
@@ -282,7 +286,7 @@ class TestStockQuoteToolFunction:
         assert response_data["success"] is True
         assert response_data["data"] == mock_data
         mock_gemini_client.lookup_stock_symbol.assert_called_once_with("HSBC Holdings")
-        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005")
+        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005", company_name="HSBC Holdings Limited")
 
     @patch("src.hsi_server.main.get_gemini_client")
     def test_get_stock_quote_company_lookup_failure(self, mock_get_gemini_client):
@@ -306,6 +310,7 @@ class TestStockQuoteToolFunction:
         )
 
     @patch("src.hsi_server.main.quote_scraper")
+    @patch("src.hsi_server.main.CACHE_ENABLED", False)
     def test_get_stock_quote_scraper_error(self, mock_quote_scraper):
         """Test stock quote when scraper raises an exception."""
         # Mock the scraper to raise an exception
@@ -458,6 +463,7 @@ class TestJSONResponseFormat:
     """Test cases for consistent JSON response formatting."""
 
     @patch("src.hsi_server.main.scraper")
+    @patch("src.hsi_server.main.CACHE_ENABLED", False)
     def test_success_response_format(self, mock_scraper):
         """Test that successful responses follow the expected JSON format."""
         mock_data = {"current_point": 20000.0, "daily_change_point": 100.0}
@@ -474,6 +480,7 @@ class TestJSONResponseFormat:
         assert response["data"] == mock_data
 
     @patch("src.hsi_server.main.scraper")
+    @patch("src.hsi_server.main.CACHE_ENABLED", False)
     def test_error_response_format(self, mock_scraper):
         """Test that error responses follow the expected JSON format."""
         mock_scraper.get_hsi_data.side_effect = Exception("Test error")
