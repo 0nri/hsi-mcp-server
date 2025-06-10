@@ -14,8 +14,9 @@ os.environ["GEMINI_MODEL"] = "gemini-2.0-flash-lite-001"
 
 # Import the main module and its components
 import src.hsi_server.main as main_module
-from src.hsi_server.main import get_hsi_data, get_hsi_news_summary, get_gemini_client
-from src.hsi_server.scraper import HSIDataScraper
+from src.hsi_server.main import get_hsi_data, get_hsi_news_summary, get_stock_quote, get_gemini_client
+from src.hsi_server.scraper_index import HSIDataScraper
+from src.hsi_server.scraper_quote import StockQuoteScraper
 from src.hsi_server.gemini_client import GeminiClient
 
 
@@ -194,6 +195,136 @@ class TestToolFunctions:
         
         assert response_data["success"] is False
         assert "Scraping failed" in response_data["error"]
+
+
+class TestStockQuoteToolFunction:
+    """Test cases for the new stock quote tool function."""
+    
+    @patch('src.hsi_server.main.quote_scraper')
+    def test_get_stock_quote_with_symbol_success(self, mock_quote_scraper):
+        """Test successful stock quote retrieval with numeric symbol."""
+        # Mock the scraper response
+        mock_data = {
+            "symbol": "00005",
+            "current_price": 52.75,
+            "price_change": -0.45,
+            "price_change_percent": -0.85,
+            "turnover": 1234567890,
+            "turnover_unit": "B",
+            "timestamp": "2024-12-06T15:30:00+08:00",
+            "source": "AAStocks",
+            "url": "http://www.aastocks.com/en/stocks/quote/quick-quote.aspx?symbol=00005"
+        }
+        mock_quote_scraper.get_stock_quote.return_value = mock_data
+        
+        # Test with numeric symbol
+        result = get_stock_quote("00005")
+        response_data = json.loads(result)
+        
+        assert response_data["success"] is True
+        assert response_data["data"] == mock_data
+        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005")
+    
+    @patch('src.hsi_server.main.get_gemini_client')
+    @patch('src.hsi_server.main.quote_scraper')
+    def test_get_stock_quote_with_company_name_success(self, mock_quote_scraper, mock_get_gemini_client):
+        """Test successful stock quote retrieval with company name lookup."""
+        # Mock Gemini client lookup
+        mock_gemini_client = Mock()
+        mock_gemini_client.lookup_stock_symbol.return_value = "00005"
+        mock_get_gemini_client.return_value = mock_gemini_client
+        
+        # Mock the scraper response
+        mock_data = {
+            "symbol": "00005",
+            "current_price": 52.75,
+            "price_change": -0.45,
+            "price_change_percent": -0.85,
+            "turnover": 1234567890,
+            "turnover_unit": "B",
+            "timestamp": "2024-12-06T15:30:00+08:00",
+            "source": "AAStocks",
+            "url": "http://www.aastocks.com/en/stocks/quote/quick-quote.aspx?symbol=00005"
+        }
+        mock_quote_scraper.get_stock_quote.return_value = mock_data
+        
+        # Test with company name
+        result = get_stock_quote("HSBC Holdings")
+        response_data = json.loads(result)
+        
+        assert response_data["success"] is True
+        assert response_data["data"] == mock_data
+        mock_gemini_client.lookup_stock_symbol.assert_called_once_with("HSBC Holdings")
+        mock_quote_scraper.get_stock_quote.assert_called_once_with("00005")
+    
+    @patch('src.hsi_server.main.get_gemini_client')
+    def test_get_stock_quote_company_lookup_failure(self, mock_get_gemini_client):
+        """Test stock quote when company symbol lookup fails."""
+        # Mock Gemini client to return None (not found)
+        mock_gemini_client = Mock()
+        mock_gemini_client.lookup_stock_symbol.return_value = None
+        mock_get_gemini_client.return_value = mock_gemini_client
+        
+        # Test with company name that can't be found
+        result = get_stock_quote("Unknown Company")
+        response_data = json.loads(result)
+        
+        assert response_data["success"] is False
+        assert "Could not find Hong Kong stock symbol for company: Unknown Company" in response_data["error"]
+        mock_gemini_client.lookup_stock_symbol.assert_called_once_with("Unknown Company")
+    
+    @patch('src.hsi_server.main.quote_scraper')
+    def test_get_stock_quote_scraper_error(self, mock_quote_scraper):
+        """Test stock quote when scraper raises an exception."""
+        # Mock the scraper to raise an exception
+        mock_quote_scraper.get_stock_quote.side_effect = Exception("Scraping failed")
+        
+        # Test with symbol
+        result = get_stock_quote("00005")
+        response_data = json.loads(result)
+        
+        assert response_data["success"] is False
+        assert "Scraping failed" in response_data["error"]
+
+
+class TestStockQuoteScraper:
+    """Test cases for StockQuoteScraper class."""
+    
+    def test_scraper_initialization(self):
+        """Test stock quote scraper initializes correctly."""
+        scraper = StockQuoteScraper()
+        assert scraper.session is not None
+        assert scraper.BASE_URL == "https://www.aastocks.com"
+        assert "{symbol}" in scraper.QUOTE_URL_TEMPLATE
+    
+    def test_format_symbol(self):
+        """Test symbol formatting functionality."""
+        scraper = StockQuoteScraper()
+        
+        # Test various input formats
+        assert scraper._format_symbol("5") == "00005"
+        assert scraper._format_symbol("05") == "00005"
+        assert scraper._format_symbol("005") == "00005"
+        assert scraper._format_symbol("0005") == "00005"
+        assert scraper._format_symbol("00005") == "00005"
+        assert scraper._format_symbol("388") == "00388"
+        assert scraper._format_symbol("1299") == "01299"
+        assert scraper._format_symbol("700") == "00700"
+        
+        # Test with HK suffix
+        assert scraper._format_symbol("5.HK") == "00005"
+        assert scraper._format_symbol("388.hk") == "00388"
+        assert scraper._format_symbol("1299.HKG") == "01299"
+        
+        # Test error cases
+        with pytest.raises(ValueError, match="Symbol cannot be empty"):
+            scraper._format_symbol("")
+        
+        with pytest.raises(ValueError, match="No numeric symbol found"):
+            scraper._format_symbol("INVALID")
+        
+        with pytest.raises(ValueError, match="Symbol too long"):
+            scraper._format_symbol("123456")
 
 
 class TestGeminiClientIntegration:

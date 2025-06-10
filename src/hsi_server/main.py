@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 from mcp.server import FastMCP
 
 from .gemini_client import GeminiClient
-from .scraper import HSIDataScraper
+from .scraper_index import HSIDataScraper
+from .scraper_quote import StockQuoteScraper
 
 load_dotenv()
 
@@ -23,6 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger("hsi_server")
 
 scraper = HSIDataScraper()
+quote_scraper = StockQuoteScraper()
 gemini_client: GeminiClient | None = None
 
 def get_gemini_client() -> GeminiClient:
@@ -94,6 +96,52 @@ def get_hsi_news_summary(limit: int = 10) -> str:
         }, indent=2)
     except Exception as e:
         logger.error(f"Failed to get news summary: {e}", exc_info=True)
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+def get_stock_quote(symbol_or_company: str) -> str:
+    """Get current stock quote data for a Hong Kong listed company by symbol or company name"""
+    try:
+        # Determine if input is a company name or stock symbol
+        input_cleaned = symbol_or_company.strip()
+        
+        # Check if input looks like a stock symbol (contains digits)
+        if any(char.isdigit() for char in input_cleaned):
+            # Treat as stock symbol
+            symbol = input_cleaned
+            logger.info(f"Treating input as stock symbol: {symbol}")
+        else:
+            # Treat as company name - use Gemini to look up symbol
+            logger.info(f"Treating input as company name: {input_cleaned}")
+            try:
+                client = get_gemini_client()
+                symbol = client.lookup_stock_symbol(input_cleaned)
+                if not symbol:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"Could not find Hong Kong stock symbol for company: {input_cleaned}"
+                    }, indent=2)
+                logger.info(f"Found symbol {symbol} for company {input_cleaned}")
+            except Exception as e:
+                logger.error(f"Failed to lookup symbol for {input_cleaned}: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": f"Failed to lookup stock symbol for company: {input_cleaned}. Error: {str(e)}"
+                }, indent=2)
+        
+        # Get the stock quote data
+        quote_data = quote_scraper.get_stock_quote(symbol)
+        
+        return json.dumps({
+            "success": True,
+            "data": quote_data
+        }, indent=2)
+        
+    except Exception as e:
+        logger.error(f"Failed to get stock quote for {symbol_or_company}: {e}", exc_info=True)
         return json.dumps({
             "success": False,
             "error": str(e)

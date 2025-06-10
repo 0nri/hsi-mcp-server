@@ -2,10 +2,12 @@
 
 import logging
 import os
-from typing import List, Dict
+import re
+from typing import List, Dict, Optional
 
 import vertexai
-from vertexai.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel, Tool
+from vertexai.preview.generative_models import grounding
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,7 @@ class GeminiClient:
     
     def __init__(self) -> None:
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.location = os.getenv("GEMINI_LOCATION", "us-central1")
+        self.location = os.getenv("GEMINI_LOCATION", "global")
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite-001")
         
         if not self.project_id:
@@ -129,3 +131,112 @@ Summary:"""
             return ". ".join(summary_parts) + f". Summary based on {len(headlines)} recent headlines."
         else:
             return f"Market update covering {len(headlines)} recent developments across Hong Kong financial markets."
+    
+    def lookup_stock_symbol(self, company_name: str) -> Optional[str]:
+        """Look up Hong Kong stock symbol for a company name using Google Search grounding."""
+        if not company_name:
+            return None
+        
+        logger.info(f"Looking up stock symbol for company: {company_name}")
+        
+        try:
+            # Create the lookup prompt
+            prompt = f"""
+Please find the Hong Kong stock exchange symbol for the company "{company_name}". 
+I need the numeric stock code used on the Hong Kong Stock Exchange (HKEX).
+
+For example:
+- HSBC Holdings Limited → 00005
+- Hang Seng Bank → 00011
+- Tencent Holdings → 00700
+- AIA Group → 01299
+
+Please respond with ONLY the numeric stock code (5 digits, padded with zeros if necessary). 
+If you cannot find a valid Hong Kong stock symbol, respond with "NOT_FOUND".
+
+Company: {company_name}
+Hong Kong Stock Symbol:"""
+
+            # Try with Google Search grounding first
+            try:
+                # Create model with Google Search grounding
+                grounded_model = GenerativeModel(
+                    self.model_name,
+                    tools=[
+                        Tool.from_google_search_retrieval(
+                            grounding.GoogleSearchRetrieval()
+                        )
+                    ]
+                )
+                
+                response = grounded_model.generate_content(
+                    prompt,
+                    generation_config={
+                        "temperature": 0.1,  # Very low temperature for factual lookup
+                        "top_p": 0.8,
+                        "top_k": 10,
+                        "max_output_tokens": 50,  # Short response expected
+                    }
+                )
+                
+                if response.text:
+                    symbol = self._extract_symbol_from_response(response.text.strip())
+                    if symbol:
+                        logger.info(f"Found symbol using grounded search: {company_name} → {symbol}")
+                        return symbol
+                        
+            except Exception as e:
+                logger.warning(f"Google Search grounding failed: {e}, trying fallback")
+            
+            # Fallback to regular Gemini without grounding
+            response = self.model.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": 0.1,
+                    "top_p": 0.8,
+                    "top_k": 10,
+                    "max_output_tokens": 50,
+                }
+            )
+            
+            if response.text:
+                symbol = self._extract_symbol_from_response(response.text.strip())
+                if symbol:
+                    logger.info(f"Found symbol using fallback: {company_name} → {symbol}")
+                    return symbol
+            
+            logger.warning(f"Could not find stock symbol for: {company_name}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error looking up stock symbol for {company_name}: {e}")
+            return None
+    
+    def _extract_symbol_from_response(self, response_text: str) -> Optional[str]:
+        """Extract stock symbol from Gemini response text."""
+        if not response_text:
+            return None
+        
+        # Handle "NOT_FOUND" response
+        if "NOT_FOUND" in response_text.upper():
+            return None
+        
+        # Look for 5-digit patterns (most common for HK stocks)
+        five_digit_match = re.search(r'\b(\d{5})\b', response_text)
+        if five_digit_match:
+            return five_digit_match.group(1)
+        
+        # Look for shorter digit patterns and pad them
+        digit_match = re.search(r'\b(\d{1,4})\b', response_text)
+        if digit_match:
+            symbol = digit_match.group(1)
+            # Pad to 5 digits
+            return symbol.zfill(5)
+        
+        # Look for patterns like "0005.HK" or "5.HK"
+        hk_pattern_match = re.search(r'\b(\d{1,5})\.HK\b', response_text, re.IGNORECASE)
+        if hk_pattern_match:
+            symbol = hk_pattern_match.group(1)
+            return symbol.zfill(5)
+        
+        return None
