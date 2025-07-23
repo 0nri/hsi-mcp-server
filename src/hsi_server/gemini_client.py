@@ -30,17 +30,17 @@ class GeminiClient:
     # Model configuration for different use cases
     MODEL_CONFIGS = {
         "summarization": {
-            "default": "gemini-2.0-flash-lite-001",
+            "default": "gemini-2.5-flash-lite",
             "env_var": "GEMINI_SUMMARIZATION_MODEL",
             "description": "Cost-effective model for text summarization",
         },
         "grounding": {
-            "default": "gemini-2.0-flash-001",
+            "default": "gemini-2.5-flash",
             "env_var": "GEMINI_GROUNDING_MODEL",
             "description": "Full model with Google Search grounding support",
         },
         "default": {
-            "default": "gemini-2.0-flash-lite-001",
+            "default": "gemini-2.5-flash",
             "env_var": "GEMINI_MODEL",
             "description": "Default model for general use",
         },

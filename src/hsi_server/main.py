@@ -120,7 +120,7 @@ def _create_json_response(success: bool, data: Any = None, error: Optional[str] 
     Returns:
         JSON string with standardized response format
     """
-    response = {"success": success}
+    response: Dict[str, Any] = {"success": success}
     if success and data is not None:
         response["data"] = data
     elif not success and error:
