@@ -143,6 +143,32 @@ Retrieves news headlines with an AI-generated summary.
 **Parameters**:
 - `limit` (optional): Number of headlines (1-20, default: 10)
 
+#### `get_stock_quote`
+Retrieves current stock quote data for a Hong Kong listed company.
+
+**Parameters**:
+- `symbol_or_company` (required): Either a HK stock symbol (e.g., "00005", "388") or company name (e.g., "HSBC Holdings")
+
+**Example Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "symbol": "00005",
+    "company_name": "HSBC Holdings plc",
+    "current_price": 65.50,
+    "price_change": 1.25,
+    "price_change_percent": 1.94,
+    "turnover": "542.3M",
+    "last_updated_time": "2024-01-15T15:30:00.123456",
+    "source": "AAStocks",
+    "url": "https://www.aastocks.com/en/stocks/quote/detail-quote.aspx?symbol=00005"
+  }
+}
+```
+
+**Note**: The tool supports both stock symbols and company names thanks to AI-powered symbol lookup using Gemini.
+
 ## Troubleshooting
 
 ### Common Issues
